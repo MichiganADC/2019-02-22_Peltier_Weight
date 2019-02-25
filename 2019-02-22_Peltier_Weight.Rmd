@@ -1,0 +1,163 @@
+---
+title: "2019-02-22_Peltier_Weight"
+author: "Nicolas May"
+date: "2/25/2019"
+output: 
+  html_document:
+    theme: sandstone
+    highlight: zenburn
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load Requirements
+
+## Load Useful Globals & Functions
+
+```{r}
+source("~/Desktop/config.R")
+source("~/Desktop/helpers.R")
+```
+
+## Load Useful Packages
+
+```{r}
+library(dplyr)
+library(stringr)
+```
+
+
+# Get Data
+
+## Define Data Fields
+
+```{r}
+# Form Header fields
+fields_u3_hd_raw <-
+  c(
+    "ptid"
+    , "form_date"
+  ) 
+# Form B1 fields
+fields_u3_b1_raw <-
+  c(
+    "weight"
+  ) %>% 
+  c(., paste0("fu_", .), paste0("tele_", .))
+
+# Combine and collapse
+fields_u3_raw <- 
+  c(
+    fields_u3_hd_raw
+    , fields_u3_b1_raw
+  )
+fields_u3 <- fields_u3_raw %>% paste(collapse = ",")
+```
+
+## Retreive Data via REDCap API
+
+```{r}
+# JSON
+json_u3 <- rc_api_get(uri    = REDCAP_API_URI,
+                      token  = REDCAP_API_TOKEN_UDS3n,
+                      fields = fields_u3)
+
+# JSON => dataframe
+df_u3 <- jsonlite::fromJSON(json_u3) 
+```
+
+# Process Data
+
+## Clean Data
+
+```{r}
+df_u3_cln <- df_u3 %>% 
+  # Empty strings ("") and "888" are `NA`s
+  na_if("") %>% na_if("888") %>% 
+  # deslect useless field(s)
+  select(-redcap_event_name) %>% 
+  # clean out missing `form_date`s
+  filter(!is.na(form_date)) %>% 
+  # clean out DDE records (--1, --2)
+  filter(str_detect(ptid, "^UM\\d{8}$")) %>% 
+  # coalesce `weight` fields
+  coalesce_ift_cols() %>% 
+  # keep only most recent visits
+  get_visit_n(id_field = ptid, form_date, n = Inf)
+```
+
+## Mutate Data
+
+Coerce `weight` fields to integer.
+
+```{r}
+df_u3_cln_mut <- df_u3_cln %>% 
+  mutate(weight = as.integer(weight))
+```
+
+
+# Summarize Data
+
+Of the most recent visits (n = `r nrow(df_u3_cln_mut)`), how many are missing `weight` (or `fu_weight`) values?
+
+```{r}
+df_u3_cln_mut %>% 
+  filter(is.na(weight)) %>% 
+  summarize(n = n())
+```
+
+The answer is `r df_u3_cln_mut %>% filter(is.na(weight)) %>% summarize(n = n())`.
+
+What are the descriptives of the `weight` field, removing `NA`s.
+
+```{r}
+df_u3_cln_mut %>%
+  filter(!is.na(weight)) %>% 
+  summarize(n    = n(),
+            Mean = mean(weight),
+            SD   = sd(weight),
+            Min  = min(weight),
+            LQ   = quantile(weight, 0.25),
+            Med  = median(weight),
+            UQ   = quantile(weight, 0.75),
+            Max  = max(weight)) %>% 
+  knitr::kable(format = "html") %>% 
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive")
+  )
+```
+
+
+
+
+```{r echo=FALSE}
+###@    #==--  :  --==#    @##==---==##@##==---==##@    #==--  :  --==#    @###
+#==##@    #==-- --==#    @##==---==##@   @##==---==##@    #==-- --==#    @##==#
+#--==##@    #==-==#    @##==---==##@   #   @##==---==##@    #==-==#    @##==--#
+#=---==##@    #=#    @##==---==##@    #=#    @##==---==##@    #=#    @##==---=#
+##==---==##@   #   @##==---==##@    #==-==#    @##==---==##@   #   @##==---==##
+#@##==---==##@   @##==---==##@    #==-- --==#    @##==---==##@   @##==---==##@#
+#  @##==---==##@##==---==##@    EXTRA  :  SPACE    @##==---==##@##==---==##@  #
+#@##==---==##@   @##==---==##@    #==-- --==#    @##==---==##@   @##==---==##@#
+##==---==##@   #   @##==---==##@    #==-==#    @##==---==##@   #   @##==---==##
+#=---==##@    #=#    @##==---==##@    #=#    @##==---==##@    #=#    @##==---=#
+#--==##@    #==-==#    @##==---==##@   #   @##==---==##@    #==-==#    @##==--#
+#==##@    #==-- --==#    @##==---==##@   @##==---==##@    #==-- --==#    @##==#
+###@    #==--  :  --==#    @##==---==##@##==---==##@    #==--  :  --==#    @###
+#==##@    #==-- --==#    @##==---==##@   @##==---==##@    #==-- --==#    @##==#
+#--==##@    #==-==#    @##==---==##@   #   @##==---==##@    #==-==#    @##==--#
+#=---==##@    #=#    @##==---==##@    #=#    @##==---==##@    #=#    @##==---=#
+##==---==##@   #   @##==---==##@    #==-==#    @##==---==##@   #   @##==---==##
+#@##==---==##@   @##==---==##@    #==-- --==#    @##==---==##@   @##==---==##@#
+#  @##==---==##@##==---==##@    EXTRA  :  SPACE    @##==---==##@##==---==##@  #
+#@##==---==##@   @##==---==##@    #==-- --==#    @##==---==##@   @##==---==##@#
+##==---==##@   #   @##==---==##@    #==-==#    @##==---==##@   #   @##==---==##
+#=---==##@    #=#    @##==---==##@    #=#    @##==---==##@    #=#    @##==---=#
+#--==##@    #==-==#    @##==---==##@   #   @##==---==##@    #==-==#    @##==--#
+#==##@    #==-- --==#    @##==---==##@   @##==---==##@    #==-- --==#    @##==#
+###@    #==--  :  --==#    @##==---==##@##==---==##@    #==--  :  --==#    @###
+```
